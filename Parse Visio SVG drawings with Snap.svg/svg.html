@@ -1,0 +1,359 @@
+<!doctype html>
+<html>
+<head>
+
+	<script src="jquery.min.js"></script>
+	<script src="snap.svg-min.js"></script>
+	
+	<style>
+		body {
+			background-color: #eee;
+			font-family: sans-serif;
+			font-size: 12px;
+		}
+
+		#title {
+			font-size: 18px;
+			font-weight: bold;
+		}
+		#comment {
+			font-size: 12px;
+			color: #888;
+		}
+
+		#svg-object {
+			background-color: white;
+			border: 1px dashed #aaa;
+			float: left;
+			width: 75%;
+			vertical-align:top;	/* prevents spurious border below the SVG */
+		 }
+
+		.output {
+			background-color: white;
+			width: 20%;
+			margin-left: 5px;
+			float: left;
+			border: 1px dashed #aaa;
+			padding: 10px;
+			float: left;
+			pointer-events: none;
+		}
+		
+		.output ul {
+			padding-left: 20px;
+		}
+		
+	</style>
+	
+</head>
+<body>
+
+	<div id="title"></div>
+	<div id="comment"></div>
+
+	<object id="svg-object" data='VisioFlowchart.svg' type='image/svg+xml' width="100%"></object>
+
+	<div class="output">
+		<ul id="output"></ul>
+	</div>
+
+	<script>
+	
+		// Using the jQuery load() event instead of the more common ready() event.
+		// This makes sure that the SVG file has been fully loaded before we begin to work with it.
+		$(window).on("load", function() {
+			'use strict'
+
+			var selectionRect, hoveredShape;
+			
+			// Initialize Snap.svg and tell it to use the SVG data in the <object> tag
+			var rootPaper = Snap("#svg-object");
+
+			// Instead of using <object> tags, you can also load SVG files using Snap.svg itself. Here is an example:
+			/*
+			Snap.load(url, function (data) {
+				var svgContainer = Snap("#some-empty-div-on-the-page");
+				svgContainer.append(data);
+				svgPaper = Snap(svgContainer.node.firstElementChild);
+			}
+			*/
+			// Note: If you want to use something like this instead, some minor changes to the code in this tutorial would be required.
+			// Often what you choose is a matter of requirements and/or taste. But I have also found that server settings can be cause trouble. For example, SharePoint Online uses a response header for non-recognized files (such as SVG) that forces the browser to promt to save the file instead of allowing it to be embedded in an <object> tag. In this case, letting Snap load the file instead would solve the problem!
+
+
+
+			// Verify that this is actually a Visio SVG
+			var isVisioSvg = false;
+			$(rootPaper.node.attributes).each( function(){
+				if( this.value === "http://schemas.microsoft.com/visio/2003/SVGExtensions/" ) {
+					isVisioSvg = true;
+					return false; // breaks the jQuery each()
+				}
+			});
+			if(!isVisioSvg) {
+				console.log("Not a Visio SVG!");
+				return;
+			}
+
+			// Tip: It is often useful to log Snap/SVG elements to the console. There you can examine the object to figure out what selectors you need in order to locate the data you need.
+			console.log(rootPaper);
+
+			// Get visio metadata
+			// Unfortunately only the title and comment appears to be exported to SVG drawings. Other Visio metadata such as tags and author are nowhere to be found.
+			$("#title").text( "Title: " + rootPaper.select("title").node.textContent );
+			$("#comment").text( "Comment: " + rootPaper.select("desc").node.textContent );
+
+			// Remove SVG tooltips
+			rootPaper.selectAll("g").forEach( function(elm, i) {
+				// Browsers will pick up the <title> tag and display as a tooltip. This can interfere with your own application, so we can remove it this way.
+				// But the title tells us what kind of Visio shape it is, so we keep a copy of it in an atribute instead.
+				if(elm.select("title") && elm.select("title").node) {
+					var type = elm.select("title").node.textContent;
+					elm.attr("shapeType", type);
+					elm.select("title").remove();
+				}
+
+			});
+
+			// Setup event handlers on shapes
+			rootPaper.selectAll("g[id^=shape]").forEach( function(elm, i) {
+
+				// Click event
+				elm.click(function(evt) {
+					
+					// Call a helper function (see further down) to get the Visio shape clicked
+					var shape = parseShapeElement(this);
+					if(!shape) return;
+
+					console.log("SVG Click");
+
+					// Clear the previous selection box (if any)
+					if(selectionRect) {
+						selectionRect.remove();
+					}
+
+					// Draw a box around the selected shape
+					// Unfortunately this is not as precise as one is used to when working with CSS, so the box might be slightly off
+					// One reasone for this is that getBBox() does not account for strokeWidth, and I have yet to find a way to read this (especially in more complex shape-groups).
+					selectionRect = shape.paper.rect(shape.x, shape.y, shape.width, shape.height);
+					
+					// The new selection rect will not be visible unless we set some SVG style attributes.
+					// These are similar to HTML/CSS attributes, sometimes even idential.
+					// Note that we are setting more than one attribute in a single call here.
+					// "fill" should be evident. "stroke" refers to the border around an SVG element.
+					selectionRect.attr({fill: "none", stroke: "red", strokeWidth: 1});
+
+					// Setting "pointerEvents" to none means that the mouse will never be able to click/hover this element.
+					selectionRect.attr({pointerEvents: "none"});
+					
+					// Setting the "shapeRendering" attribute allows to hint to the browser how shapes should rendered.
+					// In this example, "geometricPrecision" appears to give best result. Also try "optimizeSpeed" and "crispEdges"
+					selectionRect.attr({shapeRendering: "geometricPrecision"});
+
+					// Finally stop the click event from bubbling up to the Visio "page"
+					evt.preventDefault();
+					evt.stopPropagation();
+				});
+
+				// Mouse hovering event
+				elm.mouseover(function(evt) {
+
+					var shape = parseShapeElement(this);
+					if(!shape) return;
+				
+					// Set cursor to pointer to indicate that we can click on shapes
+					// (We could have set this elsewhere; this was just a convenient place)
+					elm.attr({cursor: "pointer"});
+
+					// When hovering a shape we want some kind of indication.
+					// Setting the shape opacity to 50% works fine in our example. Depending on the background underneath the shape this may not work though.
+					// Alternatively we could have used a something similar to when selecting shapes, drawing a rectangle around it.
+					// Ideally we would want to clone the shape and display on top. Unfortunately I have not gottent this to work properly. The problem likely stems from Visio shapes being complex elements put together of multiple parts.
+					if(hoveredShape) {
+						// First reset any previous shape that we hovered
+						hoveredShape.attr({fillOpacity: "1", strokeOpacity: "1"});
+					}
+					// Set the opacity attributes to 50% on the current hovered shape
+					hoveredShape = this;
+					this.attr({fillOpacity: "0.5", strokeOpacity: "0.5"});
+
+					// Print data found in the Visio shape to the output panel 
+					// To see how these were obtained, see parseShapeElement() below
+					$("#output").empty();
+					if(shape) {
+						$("#output").append( $("<h3>Shape Data</h3>") );
+						$("#output").append( $("<li><b>" + "ID:</b> " + shape.id + "</li>") );
+						$("#output").append( $("<li><b>" + "Type:</b> " + shape.type + "</li>") );
+						$("#output").append( $("<li><b>" + "Text:</b> " + shape.text + "</li>") );
+						
+						var keys, i;
+						
+						$("#output").append( $("<br><h3>Custom Properties:</h3>") );
+						keys = Object.getOwnPropertyNames(shape.props);
+						for(i=0; i<keys.length; i++) {
+							$("#output").append( $("<li><b>" + keys[i] + ":</b> " + shape.props[keys[i]] + "</li>") );
+						}
+
+						$("#output").append( $("<br><h3>User Defs:</h3>") );
+						keys = Object.getOwnPropertyNames(shape.defs);
+						for(i=0; i<keys.length; i++) {
+							$("#output").append( $("<li><b>" + keys[i] + ":</b> " + shape.defs[keys[i]] + "</li>") );
+						}
+					}
+					else {
+						$("#output").append( $("<i>Not a shape...</i>") );
+					}
+				});
+				
+				// Mouse leave event
+				elm.mouseout(function(evt) {
+					// Reset a few things when the mouse is no longer hovering the shape
+					$("#output").empty();
+					if(hoveredShape) {
+						hoveredShape.attr({fillOpacity: "1", strokeOpacity: "1"});
+						hoveredShape = null;
+					}
+				});
+				
+			});
+
+			// Also add a click event handler to the background
+			rootPaper.click(function(evt) {
+				console.log("SVG Click on Paper");
+				if(selectionRect) {
+					selectionRect.remove();
+				}
+			});
+
+			// End SVG event handler setup
+			
+
+			// This helper function will take an element and try to parse it as a Visio shape
+			// It will return a new object with the properties we are interested in
+			function parseShapeElement(elm) {
+
+				// Figuring out where things are located in Visio SVG:s and what they are named, such as "v:groupContext" was done by inspecting examples in and ordinary text editor
+				var elementType = elm.node.attributes["v:groupContext"].value;
+				if( elementType === "shape" ) {
+
+					// Create the object to hold all data we collect
+					var shape = {};
+
+					// The shape type tells us what kind of Visio shape we are dealing with
+					shape.type = elm.node.attributes["shapeType"].value;
+
+					// Make sure this Visio shape is of interest to us.
+					// "dynamic connector" corresponds to arrows
+					// "sheet" can be the background or container objects
+					var doNotProcess = ["sheet", "dynamic connector"];
+					var type = shape.type.toLowerCase();
+					for(var i=0; i<doNotProcess.length; i++) {
+						if(type.indexOf(doNotProcess[i]) !== -1) {
+							return null;
+						}
+					}
+
+					// Let begin collecting data!
+					shape.paper = elm.paper;
+					
+					// Each shape has a unique id
+					shape.id = elm.node.attributes["id"].value;
+					
+					// Shape position is relative to the SVG coordinates, not the screen/browser
+					shape.x = elm.getBBox().x;
+					shape.y = elm.getBBox().y;
+					shape.width = elm.getBBox().width;
+					shape.height = elm.getBBox().height;
+
+					// Get the text inside the shape
+					shape.text = "";
+					if(elm.select("desc") && elm.select("desc").node) {
+						shape.text = elm.select("desc").node.textContent;
+					}
+
+					// Get "Custom Properties" of the shape
+					// In Visio, right click on a shape and select properteis to view/edit these
+					shape.props = {};
+					if( elm.select("custProps") ) {
+						var visioProps = elm.select("custProps").selectAll("cp");
+						for(var i=0; i<visioProps.length; i++) {
+							if( visioProps[i].node.attributes["v:nameU"]  &&  visioProps[i].node.attributes["v:val"] ) {
+								shape.props[visioProps[i].node.attributes["v:nameU"].value] = visioProps[i].node.attributes["v:val"].value;
+							}
+						}
+					}
+					
+					// Get "User Defs" (whatever that is...)
+					shape.defs = {};
+					if( elm.select("userDefs") ) {
+						var visioDefs = elm.select("userDefs").selectAll("ud");
+						for(var i=0; i<visioDefs.length; i++) {
+							if( visioDefs[i].node.attributes["v:nameU"]  &&  visioDefs[i].node.attributes["v:val"] ) {
+								shape.defs[visioDefs[i].node.attributes["v:nameU"].value] = visioDefs[i].node.attributes["v:val"].value;
+							}
+						}
+					}
+										
+					return shape;
+				} 
+				else {
+					// Not a Visio shape
+					return null;
+				}
+			}
+
+
+			// Visio will add an empty border around the Visio page in the SVG
+			// This function will try to fit the SVG as best can in its container to show as much as possible of the drawing
+			// It will also resize the container to make the most of the available space
+			// All this while preserving aspect ratio of the SVG
+			function resizeSvgAndContainer(objectElementId) {
+
+				// Get the container
+				var objectElement = $(objectElementId);
+
+				// Get bounding box of the (Visio) page
+				rootPaper.selectAll("g").forEach(function(elm){			
+					if(elm.node.attributes["v:groupContext"] && elm.node.attributes["v:groupContext"].value === "foregroundPage") {
+					
+						var visioPage = elm.node;
+						
+						// The "Bounding Box" contains information about an SVG element's position
+						var x = visioPage.getBBox().x;
+						var y = visioPage.getBBox().y;
+						var w = visioPage.getBBox().width;
+						var h = visioPage.getBBox().height;
+
+						// Figure out a new viewBox that shows as much as possible of the drawing
+						// The viewbox is a property of SVG that specifies what part of the drawing to display. The actual drawing can extend beyong this viewbox so you would have to pan the drawing to view it all.
+						// It is not perfect. This is probably because getBBox does not include account for strokeWidth, and I have yet to find out a way to figure this out.
+						// This can cause shapes to be clipped. I am adding marging to the new viewbox to try and fix this. Using a relative marginY appears to give decent result for most of my needs. You may need to try something different yourself.
+						var marginX = 1;
+						var marginY = (w/h);
+						var newViewBox = (x-marginX) + " " + (y-marginY) + " " + (w+marginX*2) + " " + (h+marginY*2);
+
+						// The width of the container is fixed. But we can alter the height to show as much as possible of the drawing at its specified aspect ratio.
+						objectElement.height( objectElement.width() / (w/h) );
+
+						// Set SVG to make Visio page fill entire object canvas
+						// Here I am also using Snap's animation feature for a nice effect when loading the page
+						// 300 is the animation duration, "mina.easeinout" is the animation easing. Other easings are: easeinout, linear, easein, easeout, backin, backout, elastic & bounce.
+						rootPaper.animate({viewBox: newViewBox}, 300, mina.easeinout);
+					}
+				});			
+			}
+			
+			// Call the resize function at startup
+			resizeSvgAndContainer("#svg-object");
+			// Also register an event handler if window should resize in the future
+			$(window).resize(function () {
+				resizeSvgAndContainer("#svg-object");
+			});
+
+		});
+	
+	</script>
+
+</body>
+</html>
