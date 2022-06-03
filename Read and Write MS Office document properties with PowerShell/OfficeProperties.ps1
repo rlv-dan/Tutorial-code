@@ -1,6 +1,48 @@
+<#
 
-# PowerShell cmdlets to read & write MS Office document properties
-# Compiled by rlv-dan from various source online
+PowerShell cmdlets to read & write MS Office document properties
+Compiled by rlv-dan from various source online
+
+### Example usage (Word is used here, but Excel & PowerPoint works the same) ###
+
+. d:\OfficeProperties.ps1
+
+write-host "Start Word and load a document..." -Foreground Yellow
+$app = New-Object -ComObject Word.Application
+$app.visible = $true
+$doc = $app.Documents.Open("d:\Properties.docx", $false, $false, $false)
+
+write-host "`nAll BUILT IN Properties:" -Foreground Yellow
+Get-OfficeDocBuiltInProperties $doc
+
+write-host "`nWrite to BUILT IN author property:" -Foreground Yellow
+$result = Set-OfficeDocBuiltInProperty "Author" "Mr. Robot" $doc
+write-host "Result: $result"
+
+write-host "`nRead BUILT IN author again:" -Foreground Yellow
+Get-OfficeDocBuiltInProperty "Author" $doc
+
+write-host "`nAll CUSTOM Properties (none if new document):" -Foreground Yellow
+Get-OfficeDocCustomProperties $doc
+
+write-host "`nWrite a CUSTOM property:" -Foreground Yellow
+$result = Set-OfficeDocCustomProperty "Hacked by" "fsociety" $doc
+write-host "Result: $result"
+
+write-host "`nRead back the CUSTOM property:" -Foreground Yellow
+Get-OfficeDocCustomProperty "Hacked by" $doc
+
+write-host "`nSave document and close Word..." -Foreground Yellow
+$doc.Save()
+$doc.Close()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
+$app.Quit()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($app) | Out-Null
+[gc]::collect()
+[gc]::WaitForPendingFinalizers()
+write-host "`nReady!" -Foreground Green
+
+#>
 
 function Get-OfficeDocBuiltInProperties {
     [OutputType([Hashtable])]
@@ -149,47 +191,3 @@ function Set-OfficeDocCustomProperty {
     }
 }
 
-<#
-
-### Example usage ###
-
-# Note: MS Word is used here, but the cmdlets work with Excel & PowerPoint too
-
-. d:\OfficeProperties.ps1
-
-write-host "Start Word and load a document..." -Foreground Yellow
-$app = New-Object -ComObject Word.Application
-$app.visible = $true
-$doc = $app.Documents.Open("d:\Properties.docx", $false, $false, $false)
-
-write-host "`nAll BUILT IN Properties:" -Foreground Yellow
-Get-OfficeDocBuiltInProperties $doc
-
-write-host "`nWrite to BUILT IN author property:" -Foreground Yellow
-$result = Set-OfficeDocBuiltInProperty "Author" "Mr. Robot" $doc
-write-host "Result: $result"
-
-write-host "`nRead BUILT IN author again:" -Foreground Yellow
-Get-OfficeDocBuiltInProperty "Author" $doc
-
-write-host "`nAll CUSTOM Properties (none if new document):" -Foreground Yellow
-Get-OfficeDocCustomProperties $doc
-
-write-host "`nWrite a CUSTOM property:" -Foreground Yellow
-$result = Set-OfficeDocCustomProperty "Hacked by" "fsociety" $doc
-write-host "Result: $result"
-
-write-host "`nRead back the CUSTOM property:" -Foreground Yellow
-Get-OfficeDocCustomProperty "Hacked by" $doc
-
-write-host "`nSave document and close Word..." -Foreground Yellow
-$doc.Save()
-$doc.Close()
-[System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
-$app.Quit()
-[System.Runtime.Interopservices.Marshal]::ReleaseComObject($app) | Out-Null
-[gc]::collect()
-[gc]::WaitForPendingFinalizers()
-write-host "`nReady!" -Foreground Green
-
-#>
